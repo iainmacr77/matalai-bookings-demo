@@ -8,17 +8,17 @@ const About = () => {
           {/* Image */}
           <div className="relative h-[500px] rounded-lg overflow-hidden">
             <img
-              src="/about-image.jpg"
-              alt="About Matalai"
+              src="/masi-women.png"
+              alt="About Nyoka"
               className="w-full h-full object-cover"
             />
           </div>
 
           {/* Content */}
           <div>
-            <h2 className="text-4xl font-bold mb-6">About Matalai</h2>
+            <h2 className="text-4xl font-bold mb-6">About Nyoka</h2>
             <p className="text-gray-600 mb-6">
-              Matalai has been providing exceptional safari experiences for over 20 years. 
+              Nyoka has been providing exceptional safari experiences for over 20 years. 
               Our commitment to luxury, sustainability, and authentic African experiences 
               has made us one of the most trusted names in safari tourism.
             </p>
