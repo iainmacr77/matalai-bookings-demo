@@ -26,9 +26,9 @@ const ChatWidget = () => {
   const handleSendMessage = async () => { // Make the function async
     const trimmedMessage = currentMessage.trim();
     if (trimmedMessage && isWidgetOpen) { // Only send if widget is open
-      const userMessage = { sender: 'user', text: trimmedMessage };
+      const userMessageObject = { sender: 'user', text: trimmedMessage }; // Renamed variable for clarity
       // Add user message immediately
-      setMessages(prevMessages => [...prevMessages, userMessage]);
+      setMessages(prevMessages => [...prevMessages, userMessageObject]);
       const messageToSend = trimmedMessage; // Store message before clearing input
       setCurrentMessage(''); // Clear input immediately
 
@@ -39,11 +39,11 @@ const ChatWidget = () => {
 
       try {
         // Call the Edge Function
-        console.log(`Invoking function 'process-chat' with body:`, { message: messageToSend }); // Add log before invoke
+        console.log(`Invoking function 'process-chat' with body:`, { userMessage: messageToSend }); // Log uses the NEW key
         const { data, error } = await supabase.functions.invoke('process-chat', {
-          // ====> VERIFY THIS PART <====
-          body: { message: messageToSend },
-          // ===========================
+          // ====> THIS LINE WAS CHANGED <====
+          body: { userMessage: messageToSend }, // Changed 'message' key to 'userMessage'
+          // ================================
         });
 
         // Remove thinking indicator
