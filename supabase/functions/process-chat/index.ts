@@ -82,10 +82,10 @@ const specificIntentMap = new Map<string[], string>([
     [['photography program', 'photo workshop', 'camera equipment advice'], 'direct_kb_general_safari_photography_program'],
     [['photography', 'taking pictures', 'camera'], 'direct_kb_general_safari_photography_program'],
     [['children policy', 'kids policy', 'family program info'], 'direct_kb_general_safari_children_family_program'],
-    [['list lodges', 'lodge list', /* 'available lodges', */ /* 'which lodges', */ 'list all lodges', 'show.*all lodges', 'name all.*lodges', 'which lodges do you have', 'list our lodges', 'show me.*lodges', 'list all.*lodges'], 'action_list_lodges_all'],
-    [['list.*south africa lodges', 'show.*south africa lodges', 'south africa lodge list', 'lodges in south africa'], 'action_list_lodges_south_africa'],
-    [['list.*botswana lodges', 'show.*botswana lodges', 'botswana lodge list', 'lodges in botswana'], 'action_list_lodges_botswana'],
-    [['list.*mozambique lodges', 'show.*mozambique lodges', 'mozambique lodge list', 'lodges in mozambique'], 'action_list_lodges_mozambique'],
+    [['list lodges', 'lodge list', 'list all lodges', 'show.*all lodges', 'name all.*lodges', 'which lodges do you have', 'list our lodges', 'list your lodges', 'show me.*lodges', 'list all.*lodges', 'where are your lodges', 'what lodges do you have', 'lodge names', 'name the lodges'], 'action_list_lodges_all'], // Added 'list your lodges'
+    [['list.*south africa lodges', 'show.*south africa lodges', 'south africa lodge list', 'lodges in south africa', 'which lodges are in south africa'], 'action_list_lodges_south_africa'], // Added 'which lodges are in south africa'
+    [['list.*botswana lodges', 'show.*botswana lodges', 'botswana lodge list', 'lodges in botswana', 'which lodges are in botswana'], 'action_list_lodges_botswana'], // Added variation
+    [['list.*mozambique lodges', 'show.*mozambique lodges', 'mozambique lodge list', 'lodges in mozambique', 'which lodges are in mozambique'], 'action_list_lodges_mozambique'],
     [['which lodges.*malaria zone', 'list malaria lodges', 'malaria area lodges'], 'action_filter_lodges_malaria'],
     [['which lodges.*not.*malaria zone', 'lodges outside malaria zone', 'no malaria lodges'], 'action_filter_lodges_no_malaria'],
     [['which lodges.*pool', 'lodges.*swimming pool', 'pool lodges'], 'action_filter_lodges_pool'],
@@ -117,10 +117,10 @@ const specificIntentMap = new Map<string[], string>([
     [['nearest airport.*coral coast', 'closest airport.*coral coast', 'airport for coral coast'], 'action_get_airport_coral_coast'],
     [['nearest airport.*bazaruto blue', 'closest airport.*bazaruto blue', 'airport for bazaruto blue'], 'action_get_airport_bazaruto_blue'],
     [['nearest airport.*quite retreat', 'closest airport.*quite retreat', 'airport for quite retreat'], 'action_get_airport_quite_retreat'],
-    [['list.*rooms.*marula grove', 'marula grove rooms'], 'action_list_rooms_marula_grove'],
-    [['list.*rooms.*rhino ridge', 'rhino ridge rooms'], 'action_list_rooms_rhino_ridge'], // <<< Failing previously
-    [['list.*rooms.*leadwood house', 'leadwood house rooms'], 'action_list_rooms_leadwood_house'],
-    [['list.*rooms.*khwai river', 'khwai river rooms'], 'action_list_rooms_khwai_river'],
+    [['list.*rooms.*marula grove', 'marula grove rooms', 'rooms in marula'], 'action_list_rooms_marula_grove'],
+    [['list.*rooms.*rhino ridge', 'rhino ridge rooms', 'rooms in rhino ridge'], 'action_list_rooms_rhino_ridge'], // <<< Failing previously
+    [['list.*rooms.*leadwood house', 'leadwood house rooms', 'rooms in leadwood house'], 'action_list_rooms_leadwood_house'],
+    [['list.*rooms.*khwai river', 'khwai river rooms', 'rooms in khwai river'], 'action_list_rooms_khwai_river'],
     [['list.*rooms.*savuti plains', 'savuti plains rooms'], 'action_list_rooms_savuti_plains'],
     [['list.*rooms.*okavango trails', 'okavango trails rooms'], 'action_list_rooms_okavango_trails'],
     [['list.*rooms.*baobab point', 'baobab point rooms'], 'action_list_rooms_baobab_point'],
@@ -254,20 +254,42 @@ serve(async (req) => {
   try {
     // --- Parse Request Body ---
     let userMessage: string | null = null;
-     try {
+    let chatHistory: Array<{ role: string, parts: Array<{ text: string }> }> = []; // <<< ADDED chatHistory variable declaration
+
+     try { // Nested try for JSON parsing
         console.log(`${LOG_PREFIX} Attempting to parse request body...`);
         const body = await req.json();
+
+        // Validate userMessage
         if (!body || typeof body.userMessage !== 'string' || body.userMessage.trim() === '') {
              console.warn(`${LOG_PREFIX} Invalid request body or missing/empty 'userMessage'. Body:`, body);
              return new Response(JSON.stringify({ error: "Invalid request: 'userMessage' is required." }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
         userMessage = body.userMessage.trim();
+
+        // <<< START: ADDED chatHistory parsing logic >>>
+        if (body.chatHistory && Array.isArray(body.chatHistory)) {
+            // Basic validation: ensure items have 'role' and 'parts' with text
+            chatHistory = body.chatHistory.filter(
+                (turn: any) =>
+                    typeof turn.role === 'string' &&
+                    Array.isArray(turn.parts) &&
+                    turn.parts.length > 0 &&
+                    typeof turn.parts[0].text === 'string'
+            );
+            console.log(`${LOG_PREFIX} Received and validated ${chatHistory.length} turns of chat history.`);
+        } else {
+            console.log(`${LOG_PREFIX} No valid chatHistory received in request.`);
+        }
+        // <<< END: ADDED chatHistory parsing logic >>>
+
         console.log(`${LOG_PREFIX} Received userMessage: "${userMessage}"`);
-     } catch (jsonError) {
+
+     } catch (jsonError) { // Catch JSON parsing errors
          console.error(`${LOG_PREFIX} Failed to parse request JSON:`, jsonError);
          return new Response(JSON.stringify({ error: "Invalid request format." }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
      }
-
+  
      // --- Intent Matching ---
      console.log(`${LOG_PREFIX} Attempting specific intent matching...`);
     const specificTopicOrAction = getSpecificTopic(userMessage);
@@ -761,7 +783,7 @@ serve(async (req) => {
         // --- Simple Lodge Name Entity Extraction ---
         console.log(`${LOG_PREFIX} [RAG Branch] Starting Lodge Name Entity Extraction...`);
         const knownLodgeNames: { name: string, id: number }[] = [ // Ensure these IDs match your DB
-            { name: "marula grove lodge", id: 1 }, { name: "marula grove", id: 1 }, // Add variations
+            { name: "marula grove lodge", id: 1 }, { name: "marula grove", id: 1 }, { name: "marula", id: 1 }, // Add variations
             { name: "rhino ridge camp", id: 2 }, { name: "rhino ridge", id: 2 },
             { name: "leadwood house", id: 3 }, { name: "leadwood", id: 3 },
             { name: "khwai river lodge", id: 4 }, { name: "khwai river", id: 4 }, { name: "khwai", id: 4 },
@@ -899,42 +921,60 @@ serve(async (req) => {
     // console.log(`${LOG_PREFIX} [RAG Branch] Final Context String (Truncated for log):\n---\n${contextString.substring(0, 500)}${contextString.length > 500 ? '...' : ''}\n---`);
 
 
-    // 3. Prepare & Send Gemini Request
-    console.log(`${LOG_PREFIX} [RAG Branch] Preparing Gemini request payload...`);
-    const finalSystemPrompt = systemPrompt.replace('{CONTEXT_PLACEHOLDER}', contextString);
-    const apiUrl = `${GEMINI_API_ENDPOINT}?key=${apiKey}`;
-
-    const payload = {
-        contents: [ { role: "model", parts: [ { text: finalSystemPrompt } ] }, { role: "user", parts: [ { text: userMessage } ] } ],
-        safetySettings: [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-         ],
-         generationConfig: { temperature: 0.6, topP: 0.95, topK: 40, maxOutputTokens: 1024 }
-    };
-    console.log(`${LOG_PREFIX} [RAG Branch] Gemini payload prepared.`);
-    // Optional: Log truncated payload
-    // const logPayload = JSON.parse(JSON.stringify(payload));
-    // if (logPayload.contents[0]?.parts[0]?.text && logPayload.contents[0]?.parts[0]?.text.length > 300) { logPayload.contents[0].parts[0].text = logPayload.contents[0].parts[0].text.substring(0, 300) + `... (System Prompt + Context Truncated)`; }
-    // console.log(`${LOG_PREFIX} [RAG Branch] Sending payload (truncated context):`, JSON.stringify(logPayload));
-
-
-    console.log(`${LOG_PREFIX} [RAG Branch] Attempting to call Gemini API at ${GEMINI_API_ENDPOINT}...`);
-    let geminiApiResponse: Response | null = null;
-    let fetchStartTime = Date.now(); // <<< Time the fetch
-    try {
-         geminiApiResponse = await fetch(apiUrl, {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify(payload)
-         });
-         let fetchEndTime = Date.now();
-         console.log(`${LOG_PREFIX} [RAG Branch] Gemini API fetch completed. Status: ${geminiApiResponse?.status}. Duration: ${fetchEndTime - fetchStartTime}ms`);
-    } catch (fetchError) {
-        let fetchEndTime = Date.now();
-        console.error(`${LOG_PREFIX} [RAG Branch] Fetch error calling Gemini API after ${fetchEndTime - fetchStartTime}ms:`, fetchError);
-        // geminiApiResponse remains null
-    }
+       // 3. Prepare & Send Gemini Request
+       console.log(`${LOG_PREFIX} [RAG Branch] Preparing Gemini request payload...`);
+       const finalSystemPrompt = systemPrompt.replace('{CONTEXT_PLACEHOLDER}', contextString);
+       const apiUrl = `${GEMINI_API_ENDPOINT}?key=${apiKey}`;
+   
+       // Define the payload for the Gemini API call
+       const payload = {
+           // <<< START: MODIFIED contents FOR CHAT HISTORY >>>
+           contents: [
+               // 1. System Prompt (includes RAG context)
+               { role: "model", parts: [ { text: finalSystemPrompt } ] },
+               // 2. Chat History (prepended)
+               ...chatHistory, // Spread the received chat history turns
+               // 3. Latest User Message
+               { role: "user", parts: [ { text: userMessage! } ] } // Add the current user message, assert non-null
+           ],
+           // <<< END: MODIFIED contents FOR CHAT HISTORY >>>
+   
+           // Safety settings (remain unchanged)
+           safetySettings: [
+               { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+               { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+            ],
+            // Generation configuration (remains unchanged)
+            generationConfig: { temperature: 0.6, topP: 0.95, topK: 40, maxOutputTokens: 1024 }
+       };
+       // Log payload preparation completion
+       console.log(`${LOG_PREFIX} [RAG Branch] Gemini payload prepared with ${chatHistory.length} history turns.`); // Added history count log
+   
+       // Optional: Log truncated payload for debugging (remains unchanged)
+       // const logPayload = JSON.parse(JSON.stringify(payload));
+       // if (logPayload.contents[0]?.parts[0]?.text && logPayload.contents[0]?.parts[0]?.text.length > 300) { logPayload.contents[0].parts[0].text = logPayload.contents[0].parts[0].text.substring(0, 300) + `... (System Prompt + Context Truncated)`; }
+       // console.log(`${LOG_PREFIX} [RAG Branch] Sending payload (truncated context):`, JSON.stringify(logPayload));
+   
+       // Attempt to call the Gemini API
+       console.log(`${LOG_PREFIX} [RAG Branch] Attempting to call Gemini API at ${GEMINI_API_ENDPOINT}...`);
+       let geminiApiResponse: Response | null = null;
+       let fetchStartTime = Date.now(); // Time the fetch
+       try {
+            // Make the actual API request
+            geminiApiResponse = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload) // Send the constructed payload
+            });
+            let fetchEndTime = Date.now();
+            // Log the outcome of the fetch attempt
+            console.log(`${LOG_PREFIX} [RAG Branch] Gemini API fetch completed. Status: ${geminiApiResponse?.status}. Duration: ${fetchEndTime - fetchStartTime}ms`);
+       } catch (fetchError) { // Catch network errors during the fetch
+           let fetchEndTime = Date.now();
+           console.error(`${LOG_PREFIX} [RAG Branch] Fetch error calling Gemini API after ${fetchEndTime - fetchStartTime}ms:`, fetchError);
+           // geminiApiResponse remains null if fetch fails
+       }
+       // --- Handle Gemini Response --- (This line should be the one immediately following the block you replace)
 
     // 4. Handle Gemini Response
     console.log(`${LOG_PREFIX} [RAG Branch] Handling Gemini response...`);
