@@ -62,7 +62,120 @@ async function getLodgeIdByName(lodgeName: string): Promise<number | null> {
     console.log(`${LOG_PREFIX} [getLodgeIdByName] Found lodge ID ${data.id} ("${data.lodge_display_name}") for name like: "${namePattern}"`);
     return data.id;
 }
+// --- NEW Helper Function to Find Lodge ID within Text ---
+let knownLodgeNamesCache: { id: number, name: string, variations: string[] }[] | null = null;
+let cacheTimestamp: number | null = null;
+const CACHE_DURATION_MS = 5 * 60 * 1000; // Cache lodge names for 5 minutes
 
+async function findLodgeIdInText(textToSearch: string): Promise<number | null> {
+    if (!supabaseAdmin) {
+        console.error(`${LOG_PREFIX} [findLodgeIdInText] Supabase client not available.`);
+        return null;
+    }
+    const now = Date.now();
+
+    // Basic caching to avoid hitting DB for lodge names on every history check
+    if (!knownLodgeNamesCache || !cacheTimestamp || (now - cacheTimestamp > CACHE_DURATION_MS)) {
+        console.log(`${LOG_PREFIX} [findLodgeIdInText] Cache expired or empty. Fetching lodge names...`);
+        const { data, error } = await supabaseAdmin
+            .from(LODGES_TABLE_NAME)
+            .select('id, lodge_display_name');
+
+        if (error) {
+            console.error(`${LOG_PREFIX} [findLodgeIdInText] Error fetching lodge names for cache:`, error);
+            // Don't cache on error, try again next time
+            knownLodgeNamesCache = null;
+            cacheTimestamp = null;
+            // Proceed without cache for this attempt if possible (or just return null)
+            return null; // Or handle differently if needed
+        }
+
+        if (!data || data.length === 0) {
+            console.warn(`${LOG_PREFIX} [findLodgeIdInText] No lodge names found in DB.`);
+             knownLodgeNamesCache = []; // Cache empty result
+             cacheTimestamp = now;
+             return null;
+        }
+    // Prepare cache with names and enhanced variations
+    knownLodgeNamesCache = data.map(lodge => {
+      const displayName = lodge.lodge_display_name;
+      const lowerName = displayName.toLowerCase();
+      const variations = new Set<string>(); // Use a Set to handle duplicates automatically
+
+      variations.add(lowerName); // Add the full lowercase name
+
+      const parts = lowerName.split(' ');
+      const commonSuffixes = ['lodge', 'camp', 'house', 'villa', 'retreat', 'point', 'plains', 'river', 'trails'];
+
+      // Add version without common suffix (e.g., "marula grove" from "marula grove lodge")
+      if (parts.length > 1 && commonSuffixes.includes(parts[parts.length - 1])) {
+          variations.add(parts.slice(0, -1).join(' '));
+      }
+
+      // Add just the first word if it's reasonably unique/identifying (e.g., "marula")
+      // Be careful not to add generic words like "river" or "camp" alone
+      if (parts.length > 1 && parts[0].length > 3 && !commonSuffixes.includes(parts[0])) {
+           variations.add(parts[0]);
+      }
+
+      // Explicitly add common shorthand if needed (e.g., "marula lodge" for "marula grove lodge")
+      // You might need to customize this based on how people refer to lodges
+      if (lowerName === 'marula grove lodge') {
+           variations.add('marula lodge');
+      }
+      if (lowerName === 'rhino ridge camp') {
+           variations.add('rhino camp');
+           variations.add('rhino lodge'); // If people might call it that
+      }
+      // Add more specific overrides here...
+
+
+      // Add more sophisticated variation generation here if needed (e.g., phonetic matching, but gets complex)
+
+      console.log(`[findLodgeIdInText] Generated variations for "${displayName}": ${Array.from(variations).join(', ')}`); // Log generated variations
+
+      return { id: lodge.id, name: displayName, variations: Array.from(variations) };
+  });
+        cacheTimestamp = now;
+        console.log(`${LOG_PREFIX} [findLodgeIdInText] Cached ${knownLodgeNamesCache.length} lodge names with variations.`);
+
+    } else {
+         // console.log(`${LOG_PREFIX} [findLodgeIdInText] Using cached lodge names.`); // Optional: uncomment for debug
+    }
+
+
+    if (!knownLodgeNamesCache || knownLodgeNamesCache.length === 0) {
+        console.log(`${LOG_PREFIX} [findLodgeIdInText] No lodge names available (DB error or empty).`);
+        return null;
+    }
+
+    const normalizedText = textToSearch.toLowerCase().replace(/[^\w\s]/g, ''); // Normalize input text
+
+    let foundLodgeId: number | null = null;
+    let longestMatchLength = 0;
+
+    // Iterate through cached lodges and their variations
+    for (const lodge of knownLodgeNamesCache) {
+        for (const variation of lodge.variations) {
+            if (normalizedText.includes(variation)) {
+                // Prioritize longer matches to avoid partial matches (e.g., "Rhino Ridge" vs "Rhino Ridge Camp")
+                if (variation.length > longestMatchLength) {
+                    foundLodgeId = lodge.id;
+                    longestMatchLength = variation.length;
+                    // console.log(`${LOG_PREFIX} [findLodgeIdInText] Tentative match found: ID=${lodge.id}, Variation='${variation}', Length=${variation.length}`); // Debug
+                }
+            }
+        }
+    }
+
+    if (foundLodgeId) {
+        console.log(`${LOG_PREFIX} [findLodgeIdInText] Final match for text "${textToSearch.substring(0,60)}...": Lodge ID ${foundLodgeId} (Best variation length: ${longestMatchLength})`);
+    } else {
+         // console.log(`${LOG_PREFIX} [findLodgeIdInText] No lodge name found in text: "${textToSearch.substring(0,60)}..."`); // Debug
+    }
+
+    return foundLodgeId;
+}
 // --- Updated Intent Map ---
 // (Keeping existing map)
 const specificIntentMap = new Map<string[], string>([
@@ -780,136 +893,182 @@ serve(async (req) => {
         let foundLodgeId: number | null = null;
         let foundLodgeName: string | null = null;
 
-        // --- Simple Lodge Name Entity Extraction ---
-        console.log(`${LOG_PREFIX} [RAG Branch] Starting Lodge Name Entity Extraction...`);
-        const knownLodgeNames: { name: string, id: number }[] = [ // Ensure these IDs match your DB
-            { name: "marula grove lodge", id: 1 }, { name: "marula grove", id: 1 }, { name: "marula", id: 1 }, // Add variations
-            { name: "rhino ridge camp", id: 2 }, { name: "rhino ridge", id: 2 },
-            { name: "leadwood house", id: 3 }, { name: "leadwood", id: 3 },
-            { name: "khwai river lodge", id: 4 }, { name: "khwai river", id: 4 }, { name: "khwai", id: 4 },
-            { name: "savuti plains camp", id: 5 }, { name: "savuti plains", id: 5 }, { name: "savuti", id: 5 },
-            { name: "okavango trails", id: 6 }, { name: "okavango", id: 6 },
-            { name: "baobab point", id: 7 }, { name: "baobab", id: 7 },
-            { name: "coral coast lodge", id: 8 }, { name: "coral coast", id: 8 },
-            { name: "bazaruto blue villa", id: 9 }, { name: "bazaruto blue", id: 9 }, { name: "bazaruto", id: 9 },
-            { name: "quite retreat", id: 10 }, { name: "quite", id: 10 } // 'quite' spelling intentional
-        ];
-
-        for (const lodge of knownLodgeNames) {
-             // Using simple includes first, might need refinement later
-             if (lowerUserMessage.includes(lodge.name)) {
-                foundLodgeId = lodge.id;
-                foundLodgeName = lodge.name;
-                console.log(`${LOG_PREFIX} [RAG Branch] Identified potential lodge: ${foundLodgeName} (ID: ${foundLodgeId}) via simple includes.`);
-                break;
-            }
-        }
-         console.log(`${LOG_PREFIX} [RAG Branch] Lodge Name Extraction completed. Found ID: ${foundLodgeId}`);
-
-        // --- Fetch Context Based on Entity ---
-        if (foundLodgeId && foundLodgeName) {
-            contextSource = `Lodge Specific (ID: ${foundLodgeId})`;
-            console.log(`${LOG_PREFIX} [RAG Branch] Fetching context for lodge ID ${foundLodgeId} from lodges/room_types tables...`);
-            let specificContext = "";
-
-            // Fetch lodge overview and key details
-            console.log(`${LOG_PREFIX} [RAG Branch] Querying LODGES table for ID ${foundLodgeId}...`);
-            const { data: lodgeData, error: lodgeError } = await supabaseAdmin
-                .from(LODGES_TABLE_NAME)
-                .select('lodge_display_name, overview_description, primary_vibe, key_wildlife, country, region_park_area, accommodation_style, luxury_level, ideal_for')
-                .eq('id', foundLodgeId)
-                .single();
-
-            if (lodgeError) {
-                console.error(`${LOG_PREFIX} [RAG Branch] Error fetching lodge details for ID ${foundLodgeId}:`, lodgeError);
-            } else if (lodgeData) {
-                 console.log(`${LOG_PREFIX} [RAG Branch] LODGES query successful for ${lodgeData.lodge_display_name}.`);
-                specificContext += `Lodge Information for ${lodgeData.lodge_display_name}:\n`;
-                if(lodgeData.overview_description) specificContext += `Overview: ${lodgeData.overview_description}\n`;
-                if(lodgeData.primary_vibe) specificContext += `Vibe: ${lodgeData.primary_vibe}\n`;
-                if(lodgeData.luxury_level) specificContext += `Luxury Level: ${lodgeData.luxury_level}\n`;
-                if(lodgeData.accommodation_style) specificContext += `Style: ${lodgeData.accommodation_style}\n`;
-                if(lodgeData.key_wildlife && Array.isArray(lodgeData.key_wildlife) && lodgeData.key_wildlife.length > 0) specificContext += `Key Wildlife: ${lodgeData.key_wildlife.join(', ')}\n`;
-                if(lodgeData.ideal_for && Array.isArray(lodgeData.ideal_for) && lodgeData.ideal_for.length > 0) specificContext += `Ideal For: ${lodgeData.ideal_for.join(', ')}\n`;
-                if(lodgeData.country && lodgeData.region_park_area) specificContext += `Location: ${lodgeData.region_park_area}, ${lodgeData.country}\n`;
-                specificContext += "---\n";
-            } else {
-                 console.warn(`${LOG_PREFIX} [RAG Branch] LODGES query returned no data for ID ${foundLodgeId}.`);
-                 specificContext += `Lodge Information for ${foundLodgeName}:\n`; // Use matched name as fallback title
-            }
-
-            // Fetch room types for that lodge
-             console.log(`${LOG_PREFIX} [RAG Branch] Querying ROOM_TYPES table for lodge_id ${foundLodgeId}...`);
-             const { data: roomData, error: roomError } = await supabaseAdmin
-                .from(ROOM_TYPES_TABLE_NAME)
-                .select('room_type_name, description, key_features')
-                .eq('lodge_id', foundLodgeId)
-                 .order('room_type_name');
-
-             if (roomError) {
-                console.error(`${LOG_PREFIX} [RAG Branch] Error fetching room details for lodge ID ${foundLodgeId}:`, roomError);
-             } else if (roomData && roomData.length > 0) {
-                 console.log(`${LOG_PREFIX} [RAG Branch] ROOM_TYPES query successful, found ${roomData.length} rooms.`);
-                 specificContext += `\nRoom Types at this lodge:\n`;
-                 roomData.forEach(room => {
-                     specificContext += `- ${room.room_type_name}: ${room.description}`;
-                      if (room.key_features && Array.isArray(room.key_features) && room.key_features.length > 0) {
-                          specificContext += ` Key Features: ${room.key_features.join(', ')}.`;
-                      }
-                     specificContext += `\n`;
-                 });
-             } else {
-                  console.log(`${LOG_PREFIX} [RAG Branch] ROOM_TYPES query returned no rooms for lodge ID ${foundLodgeId}.`);
-             }
-
-             // Check if we actually got substantial context
-            if (specificContext && specificContext.length > `Lodge Information for ${foundLodgeName}:\n---\n`.length + 50) { // Added buffer length check
-                 contextString = specificContext.trim();
-                 console.log(`${LOG_PREFIX} [RAG Branch] Successfully fetched and formatted specific context. Length: ${contextString.length}`);
-            } else {
-                 console.warn(`${LOG_PREFIX} [RAG Branch] Found lodge ID ${foundLodgeId} but failed to fetch significant details. Falling back to general KB search.`);
-                 foundLodgeId = null; // <<< CRITICAL: Reset to trigger general search below
-                 contextSource = "Lodge Specific (Fetch Failed/Empty)";
-            }
-        }
-
-        // --- Fallback to General Knowledge Base Search ---
-         if (foundLodgeId === null) { // <<< Check the reset flag
-            contextSource = contextSource === "Lodge Specific (Fetch Failed/Empty)" ? contextSource : "General KB";
-            console.log(`${LOG_PREFIX} [RAG Branch] ${contextSource === 'General KB' ? 'No specific lodge identified.' : 'Lodge detail fetch failed/empty.'} Proceeding with KB Search.`);
-
-            console.log(`${LOG_PREFIX} [RAG Branch] Extracting Keywords for KB Search...`);
-            const stopWords = new Set(['the', 'a', 'an', 'is', 'in', 'of', 'to', 'for', 'on', 'at', 'it', 'and', 'or', 'i', 'me', 'my', 'you', 'your', 'are', 'do', 'does', 'did', 'can', 'could', 'would', 'should', 'what', 'when', 'where', 'who', 'why', 'how', 'tell', 'about', 'with', 'from', 'near', 'lodge', 'camp', 'villa', 'house', 'retreat', 'point', 'grove', 'ridge', 'river', 'plains', 'trails', 'coast', 'blue']);
-            const extractedKeywords = lowerUserMessage
-                .replace(/[^\w\s]/gi, '')
-                .split(/\s+/)
-                .filter(word => word.length > 2 && !stopWords.has(word));
-            console.log(`${LOG_PREFIX} [RAG Branch] Extracted Keywords for KB Search: ${extractedKeywords.length > 0 ? extractedKeywords.join(', ') : 'None'}`);
-
-            if (extractedKeywords.length > 0) {
-                 console.log(`${LOG_PREFIX} [RAG Branch] Querying ${KNOWLEDGE_BASE_TABLE_NAME} with keywords...`);
-                const { data: knowledgeData, error: knowledgeError } = await supabaseAdmin
-                  .from(KNOWLEDGE_BASE_TABLE_NAME)
-                  .select('content, topic')
-                  .overlaps('keywords', extractedKeywords)
-                  .limit(RAG_CONTEXT_LIMIT);
-
-                if (knowledgeError) {
-                    console.error(`${LOG_PREFIX} [RAG Branch] Supabase KB query error:`, knowledgeError);
-                     contextString = "I encountered an issue searching my general knowledge base for that topic.";
-                } else if (knowledgeData && knowledgeData.length > 0) {
-                     console.log(`${LOG_PREFIX} [RAG Branch] Found ${knowledgeData.length} general context snippets from ${KNOWLEDGE_BASE_TABLE_NAME}.`);
-                    contextString = knowledgeData.map(row => `General Topic: ${row.topic.replace('general_safari_', '').replace(/_/g, ' ')}\nContent: ${row.content}`).join('\n\n---\n\n');
-                    console.log(`${LOG_PREFIX} [RAG Branch] Formatted general context. Length: ${contextString.length}`);
+                // --- START: History-Aware Lodge ID Detection & Context Fetch ---
+                console.log(`${LOG_PREFIX} [RAG Branch] Starting History-Aware Lodge ID Detection...`);
+                let finalLodgeIdToUse: number | null = null;
+                let identifiedLodgeName: string | null = null; // To store the name associated with the found ID
+                contextSource = "None"; // Reset context source tracking
+        
+                // 1. Check current user message using the robust helper function
+                console.log(`${LOG_PREFIX} [RAG Branch] Checked current message using findLodgeIdInText. Found ID: ${finalLodgeIdToUse}`);
+                finalLodgeIdToUse = await findLodgeIdInText(userMessage); // <<< Use findLodgeIdInText also for current msg
+        
+                if (finalLodgeIdToUse) {
+                  console.log(`${LOG_PREFIX} [RAG Branch] No lodge ID found via findLodgeIdInText in current message. Checking history...`);
+                    contextSource = `Lodge Specific (Current Msg ID: ${finalLodgeIdToUse})`;
                 } else {
-                    console.log(`${LOG_PREFIX} [RAG Branch] No relevant general information found in ${KNOWLEDGE_BASE_TABLE_NAME} for keywords.`);
-                    // Keep default contextString: "No specific Nyoka information found..."
+                    console.log(`${LOG_PREFIX} [RAG Branch] No lodge ID found in current message. Checking history...`);
+                    // 2. Check recent chat history (if no ID in current message)
+                    const historyToCheck = chatHistory.slice(-4).reverse(); // Check last 4 turns (user/bot), newest first
+                    for (const turn of historyToCheck) {
+                        if (!turn?.parts?.[0]?.text) continue; // Skip empty turns
+        
+                        const textToSearch = turn.parts[0].text;
+                        console.log(`${LOG_PREFIX} [RAG Branch]   Checking history turn (${turn.role}): "${textToSearch.substring(0, 60)}..."`);
+                        const historyLodgeId = await findLodgeIdInText(textToSearch); // Use NEW function to search within history text
+                        if (historyLodgeId) {
+                            console.log(`${LOG_PREFIX} [RAG Branch] Found Lodge ID ${historyLodgeId} in history turn.`);
+                            finalLodgeIdToUse = historyLodgeId;
+                            contextSource = `Lodge Specific (History ID: ${finalLodgeIdToUse})`;
+                            break; // Found the most recent mention, stop searching history
+                        }
+                    }
                 }
-             } else {
-                console.log(`${LOG_PREFIX} [RAG Branch] No usable keywords extracted for general KB search.`);
-                // Keep default contextString
-             }
-        }
+                console.log(`${LOG_PREFIX} [RAG Branch] Lodge ID Detection completed. Final ID to use: ${finalLodgeIdToUse}`);
+        
+                // 3. Fetch Specific Lodge/Room Context if an ID was found
+                if (finalLodgeIdToUse) {
+                    console.log(`${LOG_PREFIX} [RAG Branch] Fetching context for identified lodge ID ${finalLodgeIdToUse} from lodges/room_types tables...`);
+                    let specificContext = "";
+                    let displayLodgeName = `Lodge ID ${finalLodgeIdToUse}`; // Fallback name
+        
+                    // Attempt to fetch the proper display name for better context titling
+                    try {
+                        const { data: nameData, error: nameError } = await supabaseAdmin
+                            .from(LODGES_TABLE_NAME)
+                            .select('lodge_display_name')
+                            .eq('id', finalLodgeIdToUse)
+                            .single(); // Use single as ID should be unique
+        
+                        if (nameData?.lodge_display_name) {
+                            displayLodgeName = nameData.lodge_display_name;
+                            identifiedLodgeName = displayLodgeName; // Store it
+                            console.log(`${LOG_PREFIX} [RAG Branch] Fetched display name: "${displayLodgeName}" for ID ${finalLodgeIdToUse}`);
+                        } else if (nameError && nameError.code !== 'PGRST116') { // Ignore 'Not found' error, log others
+                            console.error(`${LOG_PREFIX} [RAG Branch] Error fetching display name for ID ${finalLodgeIdToUse}:`, nameError);
+                        } else {
+                            console.log(`${LOG_PREFIX} [RAG Branch] No specific display name found for ID ${finalLodgeIdToUse}, using fallback.`);
+                        }
+                    } catch (e) {
+                        console.error(`${LOG_PREFIX} [RAG Branch] Exception fetching display name for ID ${finalLodgeIdToUse}:`, e);
+                    }
+        
+                    // Fetch lodge overview and key details (using finalLodgeIdToUse)
+                    console.log(`${LOG_PREFIX} [RAG Branch] Querying LODGES table for ID ${finalLodgeIdToUse}...`);
+                    const { data: lodgeData, error: lodgeError } = await supabaseAdmin
+                        .from(LODGES_TABLE_NAME)
+                        .select('lodge_display_name, overview_description, primary_vibe, key_wildlife, country, region_park_area, accommodation_style, luxury_level, ideal_for')
+                        .eq('id', finalLodgeIdToUse) // Use the identified ID
+                        .single();
+        
+                    if (lodgeError && lodgeError.code !== 'PGRST116') { // Log errors other than 'not found'
+                        console.error(`${LOG_PREFIX} [RAG Branch] Error fetching lodge details for ID ${finalLodgeIdToUse}:`, lodgeError);
+                    } else if (lodgeData) {
+                        console.log(`${LOG_PREFIX} [RAG Branch] LODGES query successful for ${lodgeData.lodge_display_name || displayLodgeName}.`);
+                        specificContext += `Lodge Information for ${lodgeData.lodge_display_name || displayLodgeName}:\n`; // Use fetched or fallback name
+                        if(lodgeData.overview_description) specificContext += `Overview: ${lodgeData.overview_description}\n`;
+                        if(lodgeData.primary_vibe) specificContext += `Vibe: ${lodgeData.primary_vibe}\n`;
+                        if(lodgeData.luxury_level) specificContext += `Luxury Level: ${lodgeData.luxury_level}\n`;
+                        if(lodgeData.accommodation_style) specificContext += `Style: ${lodgeData.accommodation_style}\n`;
+                        if(lodgeData.key_wildlife && Array.isArray(lodgeData.key_wildlife) && lodgeData.key_wildlife.length > 0) specificContext += `Key Wildlife: ${lodgeData.key_wildlife.join(', ')}\n`;
+                        if(lodgeData.ideal_for && Array.isArray(lodgeData.ideal_for) && lodgeData.ideal_for.length > 0) specificContext += `Ideal For: ${lodgeData.ideal_for.join(', ')}\n`;
+                        if(lodgeData.country && lodgeData.region_park_area) specificContext += `Location: ${lodgeData.region_park_area}, ${lodgeData.country}\n`;
+                        specificContext += "---\n";
+                    } else {
+                        console.warn(`${LOG_PREFIX} [RAG Branch] LODGES query returned no data for ID ${finalLodgeIdToUse}. Using fallback name.`);
+                        specificContext += `Lodge Information for ${displayLodgeName}:\n`; // Use fallback name if no data
+                    }
+        
+                    // Fetch room types for that lodge (using finalLodgeIdToUse)
+                    console.log(`${LOG_PREFIX} [RAG Branch] Querying ROOM_TYPES table for lodge_id ${finalLodgeIdToUse}...`);
+                    const { data: roomData, error: roomError } = await supabaseAdmin
+                        .from(ROOM_TYPES_TABLE_NAME)
+                        .select('room_type_name, description, key_features')
+                        .eq('lodge_id', finalLodgeIdToUse) // Use the identified ID
+                        .order('room_type_name');
+        
+                    if (roomError) {
+                       console.error(`${LOG_PREFIX} [RAG Branch] Error fetching room details for lodge ID ${finalLodgeIdToUse}:`, roomError);
+                    } else if (roomData && roomData.length > 0) {
+                        console.log(`${LOG_PREFIX} [RAG Branch] ROOM_TYPES query successful, found ${roomData.length} rooms.`);
+                        // Append room info ONLY if lodge info was found or at least the name was identified
+                        if (specificContext.length > `Lodge Information for ${displayLodgeName}:\n`.length) {
+                             specificContext += `\nRoom Types at this lodge:\n`;
+                             roomData.forEach(room => {
+                                 specificContext += `- ${room.room_type_name}: ${room.description}`;
+                                 if (room.key_features && Array.isArray(room.key_features) && room.key_features.length > 0) {
+                                     specificContext += ` Key Features: ${room.key_features.join(', ')}.`;
+                                 }
+                                 specificContext += `\n`;
+                             });
+                        } else {
+                            console.log(`${LOG_PREFIX} [RAG Branch] Skipping room details append as no primary lodge info was found.`);
+                        }
+                    } else {
+                         console.log(`${LOG_PREFIX} [RAG Branch] ROOM_TYPES query returned no rooms for lodge ID ${finalLodgeIdToUse}.`);
+                    }
+        
+                    // Check if we actually got substantial context (more than just the title)
+                    if (specificContext && specificContext.length > `Lodge Information for ${displayLodgeName}:\n---\n`.length + 50) { // Check length against title + buffer
+                        contextString = specificContext.trim();
+                        console.log(`${LOG_PREFIX} [RAG Branch] Successfully fetched and formatted specific context. Length: ${contextString.length}`);
+                    } else {
+                        console.warn(`${LOG_PREFIX} [RAG Branch] Found lodge ID ${finalLodgeIdToUse} but failed to fetch significant details. Falling back to general KB search.`);
+                        finalLodgeIdToUse = null; // <<< CRITICAL: Reset to trigger general search below
+                        contextSource = "Lodge Specific (Fetch Failed/Empty)"; // Keep track of why we fell back
+                    }
+                }
+                // --- END: History-Aware Lodge ID Detection & Context Fetch ---
+        
+        
+                // --- Fallback to General Knowledge Base Search ---
+                // NOTE: This existing block below should remain *exactly* as it was.
+                // It will now only run if finalLodgeIdToUse is null after the new logic above.
+                if (finalLodgeIdToUse === null) { // <<< This check now correctly determines if we need general KB
+                    // Update contextSource explanation based on *why* we are here
+                    contextSource = contextSource.startsWith("Lodge Specific") ? contextSource : "General KB"; // Keep 'Fetch Failed' or set to 'General KB'
+                    console.log(`${LOG_PREFIX} [RAG Branch] ${contextSource === 'General KB' ? 'No specific lodge identified in msg or history.' : 'Lodge detail fetch failed/empty.'} Proceeding with KB Search.`);
+        
+                    console.log(`${LOG_PREFIX} [RAG Branch] Extracting Keywords for KB Search...`);
+                    const stopWords = new Set(['the', 'a', 'an', 'is', 'in', 'of', 'to', 'for', 'on', 'at', 'it', 'and', 'or', 'i', 'me', 'my', 'you', 'your', 'are', 'do', 'does', 'did', 'can', 'could', 'would', 'should', 'what', 'when', 'where', 'who', 'why', 'how', 'tell', 'about', 'with', 'from', 'near', 'lodge', 'camp', 'villa', 'house', 'retreat', 'point', 'grove', 'ridge', 'river', 'plains', 'trails', 'coast', 'blue']);
+                    const extractedKeywords = lowerUserMessage // Still use current message for keywords if lodge wasn't the focus
+                        .replace(/[^\w\s]/gi, '')
+                        .split(/\s+/)
+                        .filter(word => word.length > 2 && !stopWords.has(word));
+                    console.log(`${LOG_PREFIX} [RAG Branch] Extracted Keywords for KB Search: ${extractedKeywords.length > 0 ? extractedKeywords.join(', ') : 'None'}`);
+        
+                    if (extractedKeywords.length > 0) {
+                         console.log(`${LOG_PREFIX} [RAG Branch] Querying ${KNOWLEDGE_BASE_TABLE_NAME} with keywords...`);
+                        const { data: knowledgeData, error: knowledgeError } = await supabaseAdmin
+                          .from(KNOWLEDGE_BASE_TABLE_NAME)
+                          .select('content, topic')
+                          .overlaps('keywords', extractedKeywords)
+                          .limit(RAG_CONTEXT_LIMIT);
+        
+                        if (knowledgeError) {
+                            console.error(`${LOG_PREFIX} [RAG Branch] Supabase KB query error:`, knowledgeError);
+                             // Only overwrite contextString if it wasn't already set by a failed specific fetch
+                             if (contextSource !== "Lodge Specific (Fetch Failed/Empty)") {
+                                contextString = "I encountered an issue searching my general knowledge base for that topic.";
+                             }
+                        } else if (knowledgeData && knowledgeData.length > 0) {
+                             console.log(`${LOG_PREFIX} [RAG Branch] Found ${knowledgeData.length} general context snippets from ${KNOWLEDGE_BASE_TABLE_NAME}.`);
+                             // Only overwrite contextString if it wasn't already set by a failed specific fetch
+                             if (contextSource !== "Lodge Specific (Fetch Failed/Empty)") {
+                                contextString = knowledgeData.map(row => `General Topic: ${row.topic.replace('general_safari_', '').replace(/_/g, ' ')}\nContent: ${row.content}`).join('\n\n---\n\n');
+                                console.log(`${LOG_PREFIX} [RAG Branch] Formatted general context. Length: ${contextString.length}`);
+                             } else {
+                                console.log(`${LOG_PREFIX} [RAG Branch] Specific fetch failed, preserving default 'No specific info' message instead of overwriting with general KB results.`);
+                             }
+                        } else {
+                            console.log(`${LOG_PREFIX} [RAG Branch] No relevant general information found in ${KNOWLEDGE_BASE_TABLE_NAME} for keywords.`);
+                            // Keep default contextString: "No specific Nyoka information found..." unless specific fetch failed
+                        }
+                     } else {
+                        console.log(`${LOG_PREFIX} [RAG Branch] No usable keywords extracted for general KB search.`);
+                        // Keep default contextString unless specific fetch failed
+                     }
+                }
 
     } catch (ragError) {
       console.error(`${LOG_PREFIX} [RAG Branch] Error during RAG context retrieval phase:`, ragError);
