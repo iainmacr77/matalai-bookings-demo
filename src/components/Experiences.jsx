@@ -5,7 +5,7 @@ const experiences = [
     id: 1,
     title: 'Game Drives',
     description: 'Track iconic wildlife from the comfort of our custom-designed luxury safari vehicles. Our expert guides will take you on an unforgettable journey through the African wilderness, where you\'ll encounter magnificent creatures in their natural habitat.',
-    image: '/game-drives.png'
+    image: '/game-drives.png' // Ensure paths are correct
   },
   {
     id: 2,
@@ -17,7 +17,7 @@ const experiences = [
     id: 3,
     title: 'Hot Air Balloon',
     description: 'Gain a breathtaking bird\'s-eye perspective, drifting silently over vast plains at sunrise. Float above the African landscape as the morning light paints the sky, offering unparalleled views of wildlife and the stunning terrain below.',
-    image: '/balloons.png'
+    image: '/hot-air-balloon.png'
   },
   {
     id: 4,
@@ -28,39 +28,65 @@ const experiences = [
 ];
 
 const Experiences = () => {
+  // Define vertical padding value for top/bottom margins
+  const verticalPadding = "py-4 md:py-6 lg:py-8"; // Adjust as needed
+  // Define horizontal padding specifically for the text side
+  const textHorizontalPadding = "px-4 md:px-6 lg:px-8"; // Adjust as needed
+
   return (
-    <section className="bg-white">
+    <section className="bg-[rgb(245,241,235)] overflow-hidden"> {/* Added overflow-hidden to section */}
       {experiences.map((experience, index) => (
-        <div 
+        <div
           key={experience.id}
-          className="flex flex-col lg:flex-row w-full h-[75vh] items-center"
+          // Fixed height for uniform rows, adjust h-[70vh] or use another value like h-[600px]
+          // Using a fixed height like h-[600px] might be more predictable than vh units sometimes.
+          // Try adjusting this height if images are cropped too much or sections are too tall/short.
+          className="flex flex-col lg:flex-row w-full h-[70vh] lg:h-[650px]" // Example: Set a fixed pixel height for large screens
         >
-          {/* Image Section */}
-          <div className={`w-full lg:w-1/2 h-full flex items-center justify-center p-8 ${
-            index % 2 === 1 ? 'lg:order-2' : ''
-          }`}>
-            <div className="w-full max-w-3xl h-[400px] overflow-hidden">
-              <img
-                src={experience.image}
-                alt={experience.title}
-                className="w-full h-full object-cover"
-              />
-            </div>
+          {/* --- Image Container --- */}
+          <div
+            className={`w-full lg:w-1/2 h-full relative ${ // Added relative positioning
+              index % 2 === 1 ? 'lg:order-2' : '' // Alternating order
+            }`}
+            // No padding here anymore - apply padding to an inner element if needed,
+            // but for object-cover to fill edge-to-edge (within the half), we remove padding here.
+          >
+            {/* Image fills the container div */}
+            {/* object-cover will scale the image to maintain aspect ratio while filling the div, cropping excess */}
+             {/* Added absolute positioning and padding directly related to the image if needed,
+                 but letting object-cover handle the container is cleaner */}
+            <img
+              src={experience.image}
+              alt={experience.title}
+              className={`w-full h-full object-cover ${verticalPadding}`} // Apply vertical padding here to push image content inward slightly
+              // className="absolute inset-0 w-full h-full object-cover" // Alternative: Absolute positioning
+              loading="lazy"
+            />
           </div>
 
-          {/* Content Section */}
-          <div className={`w-full lg:w-1/2 flex items-center ${
-            index % 2 === 1 ? 'lg:order-1' : ''
-          }`}>
-            <div className="max-w-xl mx-auto px-12 py-16">
-              <h2 className="text-5xl font-serif mb-6 leading-tight">{experience.title}</h2>
-              <p className="text-xl text-gray-600 leading-relaxed mb-8">{experience.description}</p>
-              <a 
-                href="#" 
-                className="inline-flex items-center text-gray-900 text-lg hover:text-gray-600 transition-colors"
+          {/* --- Content Container --- */}
+          <div
+            // This container now handles the padding for the text area
+            className={`w-full lg:w-1/2 h-full flex items-center justify-center
+                        ${verticalPadding}      // Apply VERTICAL padding
+                        ${textHorizontalPadding} // Apply HORIZONTAL padding
+                        ${index % 2 === 1 ? 'lg:order-1' : '' // Alternating order
+            }`}
+          >
+            {/* Inner div for text content max-width control */}
+            <div className="max-w-xl w-full">
+              <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif mb-4 md:mb-6 leading-tight text-gray-800">
+                {experience.title}
+              </h2>
+              <p className="text-base md:text-lg lg:text-xl text-gray-700 leading-relaxed md:leading-loose mb-6 md:mb-8">
+                {experience.description}
+              </p>
+              <a
+                href="#" // Link appropriately
+                className="inline-flex items-center text-gray-900 text-base md:text-lg hover:text-gray-600 transition-colors font-medium"
               >
                 Learn more
-                <span className="ml-3 text-2xl">→</span>
+                <span className="ml-2 text-xl md:text-2xl">→</span>
               </a>
             </div>
           </div>
@@ -70,4 +96,4 @@ const Experiences = () => {
   );
 };
 
-export default Experiences; 
+export default Experiences;
