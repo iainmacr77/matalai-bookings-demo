@@ -196,14 +196,14 @@ const specificIntentMap = new Map<string[], string>([
     [['photography', 'taking pictures', 'camera'], 'direct_kb_general_safari_photography_program'],
     [['children policy', 'kids policy', 'family program info'], 'direct_kb_general_safari_children_family_program'],
     [['list lodges', 'lodge list', 'list all lodges', 'show.*all lodges', 'name all.*lodges', 'which lodges do you have', 'list our lodges', 'list your lodges', 'show me.*lodges', 'list all.*lodges', 'where are your lodges', 'what lodges do you have', 'lodge names', 'name the lodges'], 'action_list_lodges_all'], // Added 'list your lodges'
-    [['list.*south africa lodges', 'show.*south africa lodges', 'south africa lodge list', 'lodges in south africa', 'which lodges are in south africa'], 'action_list_lodges_south_africa'], // Added 'which lodges are in south africa'
-    [['list.*botswana lodges', 'show.*botswana lodges', 'botswana lodge list', 'lodges in botswana', 'which lodges are in botswana'], 'action_list_lodges_botswana'], // Added variation
-    [['list.*mozambique lodges', 'show.*mozambique lodges', 'mozambique lodge list', 'lodges in mozambique', 'which lodges are in mozambique'], 'action_list_lodges_mozambique'],
+    [['list.*south africa lodges', 'show.*south africa lodges', 'south africa lodge list', 'lodges in south africa', 'which lodges are in south africa', 'which ones.*south africa', 'tell me more.*south africa'], 'action_list_lodges_south_africa'], // Added 'tell me more' variation
+    [['list.*botswana lodges', 'show.*botswana lodges', 'botswana lodge list', 'lodges in botswana', 'which lodges are in botswana', 'which ones.*botswana', 'tell me more.*botswana'], 'action_list_lodges_botswana'], // Added 'tell me more' variation
+    [['list.*mozambique lodges', 'show.*mozambique lodges', 'mozambique lodge list', 'lodges in mozambique', 'which lodges are in mozambique', 'which ones.*mozambique', 'tell me more.*mozambique'], 'action_list_lodges_mozambique'], // Added 'tell me more' variation
     [['which lodges.*malaria zone', 'list malaria lodges', 'malaria area lodges'], 'action_filter_lodges_malaria'],
     [['which lodges.*not.*malaria zone', 'lodges outside malaria zone', 'no malaria lodges'], 'action_filter_lodges_no_malaria'],
     [['which lodges.*pool', 'lodges.*swimming pool', 'pool lodges'], 'action_filter_lodges_pool'],
     [['list family friendly.*south africa', 'family lodges in south africa'], 'action_filter_lodges_family_south_africa'],
-    [['which lodges.*family friendly', 'lodges for families', 'lodges.*children allowed'], 'action_filter_lodges_family'],
+    [['which lodges.* famil', 'lodges for families', 'lodges.*children allowed', 'best lodges.* famil', 'good lodges.* famil', 'family lodges'], 'action_filter_lodges_family'], // Added more flexible family variations
     [['which lodges.*photography', 'lodges for photographers', 'photography lodges', 'which lodges.*good for photographers'], 'action_filter_lodges_photography'],
     [['which lodges.*romantic', 'lodges for couples', 'honeymoon lodges'], 'action_filter_lodges_romantic'],
     [['which lodges.*beach', 'beach lodges'], 'action_filter_lodges_beach'],

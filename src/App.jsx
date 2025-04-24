@@ -7,7 +7,7 @@ import Experiences from './components/Experiences';
 import About from './components/About';
 import Footer from './components/Footer';
 import ChatWidget from './components/ChatWidget';
-
+// src/App.jsx
 function App() {
   return (
     <>

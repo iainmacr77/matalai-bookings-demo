@@ -15,7 +15,7 @@ const experiences = [
   },
   {
     id: 3,
-    title: 'Hot Air Balloon',
+    title: 'Hot Air Ballooning',
     description: 'Gain a breathtaking bird\'s-eye perspective, drifting silently over vast plains at sunrise. Float above the African landscape as the morning light paints the sky, offering unparalleled views of wildlife and the stunning terrain below.',
     image: '/hot-air-balloon.png'
   },
