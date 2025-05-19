@@ -6,20 +6,23 @@ module.exports = {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  safelist: [
+    'leading-relaxed',
+    'text-base',
+    // Add 'antialiased' if you prefer to apply it via CSS rather than HTML body class
+  ],
   theme: {
     extend: {
-      // --- Font Families (Roar Africa Inspired) ---
       fontFamily: {
-        sans: ['Lato', ...defaultTheme.fontFamily.sans], // Default font
-        serif: ['Playfair Display', ...defaultTheme.fontFamily.serif], // Heading/accent font
+        sans: ['Lato', ...defaultTheme.fontFamily.sans],
+        serif: ['Playfair Display', ...defaultTheme.fontFamily.serif],
       },
-      // --- Color Palette (Refined) ---
       colors: {
         'brand-cream': '#F5F5F5',
         'brand-off-white': '#FFFFFF',
         'brand-charcoal': '#2D2D2D',
         'brand-gold': '#B8860B',
-        'brand-teal': '#14B8A6', // Can adjust/remove later if needed
+        'brand-teal': '#14B8A6',
         'brand-gray-light': '#E5E7EB',
         'brand-gray-medium': '#9CA3AF',
       },
